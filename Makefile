@@ -27,7 +27,8 @@ tools/bin/protoc:
 
 setup-ci: tools/bin/protoc
 	go get -u github.com/Masterminds/glide
-	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
+	# Dont get golangci-lint -- see README_KUMORI.txt
+	# go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
 	glide install --strip-vendor
 
 build-cluster: fmt
