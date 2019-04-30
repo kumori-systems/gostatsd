@@ -14,19 +14,19 @@ type UDPClient struct {
 }
 
 // New creates a new UDPClient
-func New(host string, port int) (client UDPClient, err error) {
+func New(host string, port int) (client *UDPClient, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("UDPClient.New: %s", r.(error).Error())
 		}
 	}()
 	endpoint := host + ":" + strconv.FormatInt(int64(port), 10)
-	client = UDPClient{endpoint}
+	client = &UDPClient{endpoint}
 	return
 }
 
 // Send a byte array via udp
-func (client UDPClient) Send(data []byte) (err error) {
+func (client *UDPClient) Send(data []byte) (err error) {
 	var conn net.Conn
 	conn = nil
 	defer func() {

@@ -1,17 +1,14 @@
 package sepagent
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"strings"
 	"time"
+
 	"./sepastats"
 	"./udpclient"
 
 	"github.com/atlassian/gostatsd"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -32,14 +29,9 @@ type Config struct {
 
 // Client is an object that is used to send messages to sepagent.
 type Client struct {
-	config *Config,
-	updclient *udpclient.UDPClient,
+	config    *Config
+	updclient *udpclient.UDPClient
 	sepastats *sepastats.SEPAStats
-}
-
-// Name returns the name of the backend.
-func (Client) Name() string {
-	return backendName
 }
 
 // NewClientFromViper constructs a sepagent backend.
@@ -54,29 +46,117 @@ func NewClientFromViper(v *viper.Viper) (gostatsd.Backend, error) {
 
 // NewClient constructs a sepagent backend.
 func NewClient(config *Config) (client *Client, err error) {
-	updclient *udpclient.UDPClient, err := udpclient.New(config.Host, config.Port)
+	updclient, err := udpclient.New(config.Host, config.Port)
 	if err != nil {
 		return
 	}
-	sepastats *sepastats.SEPAStats, err := sepastats.New(config.SepRegExpStr)
+	sepastats, err := sepastats.New(config.SepRegExpStr)
 	if err != nil {
 		return
 	}
 	client = &Client{
-		config: config,
+		config:    config,
 		udpclient: udpclient,
-		sepastats: sepastats
+		sepastats: sepastats,
 	}
 	return
 }
 
-// SendMetricsAsync prints the metrics in a MetricsMap to the sepagent, preparing payload synchronously but doing the send asynchronously.
+// Name returns the name of the backend.
+func (Client) Name() string {
+	return backendName
+}
+
+// SendMetricsAsync flushes the metrics to the backend, preparing payload
+// synchronously but doing the send asynchronously.
+// Must not read/write MetricMap asynchronously.
 func (client Client) SendMetricsAsync(ctx context.Context, metrics *gostatsd.MetricMap, cb gostatsd.SendCallback) {
+	now := time.Now().Unix()
+	errs := make([]error, 0, counter)
+	c.sepastats.Clear()
+
+	metrics.Counters.Each(func(key string, tagsKey string, counter gostatsd.Counter) {
+		if c.sepastats.IsSep(key) {
+			if err := c.sepastats.AddItem("counter", key, "count", counter.Value, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("counter", key, "per_second", counter.PerSecond, now); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	})
+
+	metrics.Timers.Each(func(key string, tagsKey string, timer gostatsd.Timers) {
+		if c.sepastats.IsSep(key) {
+			if err := c.sepastats.AddItem("timers", key, "lower", timer.Min, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "upper", timer.Max, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "count", timer.Count, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "count_ps", timer.PerSecond, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "mean", timer.Mean, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "median", timer.Median, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "std", timer.StdDev, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "sum", timer.Sum, now); err != nil {
+				errs = append(errs, err)
+			}
+			if err := c.sepastats.AddItem("timers", key, "sum_squares", timer.SumSquares, now); err != nil {
+				errs = append(errs, err)
+			}
+			for _, pct := range timer.Percentiles {
+				if err := c.sepastats.AddItem("timers", key, pct.Str, pct.Float.SumSquares, now); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+	})
+
+	metrics.Gauges.Each(func(key string, tagsKey string, gauge gostatsd.Gauge) {
+		if c.sepastats.IsSep(key) {
+			if err := c.sepastats.AddItem("gauge", key, "value", gauge.Value, now); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	})
+
+	metrics.Sets.Each(func(key string, tagsKey string, set gostatsd.Set) {
+		if c.sepastats.IsSep(key) {
+			if err := c.sepastats.AddItem("set", key, "len", len(set.Value), now); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	})
+
 	go func() {
-		cb([]error{})
+		cb(errs)
 	}()
 }
 
+// SendEvent sends event to the SepAgent.
+func (client Client) SendEvent(context.Context, *Event) error {
+	items := client.sepastats.GetItems()
+	for sep := range items {
+		if jsonBytes, err = client.sepastats.GetSerializedSep(sep); err != nil {
+			break
+		}
+		if err = u.Send(jsonBytes); err != nil {
+			break
+		}
+	}
+	return err
+}
 
 // Tooling ...
 
@@ -95,63 +175,3 @@ func getSubViper(v *viper.Viper, key string) *viper.Viper {
 	}
 	return n
 }
-
-
-/*
-// SendMetricsAsync prints the metrics in a MetricsMap to the sepagent, preparing payload synchronously but doing the send asynchronously.
-func (client Client) SendMetricsAsync(ctx context.Context, metrics *gostatsd.MetricMap, cb gostatsd.SendCallback) {
-	buf := client.preparePayload(metrics)
-	go func() {
-		cb([]error{writePayload(buf)})
-	}()
-}
-
-func writePayload(buf *bytes.Buffer) (retErr error) {
-	writer := log.StandardLogger().Writer()
-	defer func() {
-		if err := writer.Close(); err != nil && retErr == nil {
-			retErr = err
-		}
-	}()
-	_, err := writer.Write(buf.Bytes())
-	return err
-}
-
-func preparePayload(metrics *gostatsd.MetricMap) *bytes.Buffer {
-	myCounter := 0
-	myTimer := 0
-	myGauge := 0
-	SEPKEY := "envoy.cluster.external_cluster_"
-	buf := new(bytes.Buffer)
-	now := time.Now().Unix()
-	metrics.Counters.Each(func(key, tagsKey string, counter gostatsd.Counter) {
-		if strings.Contains(key, SEPKEY) {
-			myCounter++
-		}
-	})
-	metrics.Timers.Each(func(key, tagsKey string, timer gostatsd.Timer) {
-		if strings.Contains(key, SEPKEY) {
-			myTimer++
-		}
-	})
-	metrics.Gauges.Each(func(key, tagsKey string, gauge gostatsd.Gauge) {
-		if strings.Contains(key, SEPKEY) {
-			myGauge++
-		}
-	})
-	fmt.Fprintf(buf, "{ myCounter: %d, myTimer: %d, myGauge: %d, time: %d }\n", myCounter, myTimer, myGauge, now)
-	return buf
-}
-
-// SendEvent prints events to the sepagent.
-func (client Client) SendEvent(ctx context.Context, e *gostatsd.Event) (retErr error) {
-	writer := log.StandardLogger().Writer()
-	defer func() {
-		if err := writer.Close(); err != nil && retErr == nil {
-			retErr = err
-		}
-	}()
-	_, err := fmt.Fprintf(writer, "event: %+v\n", e)
-	return err
-}
-*/
