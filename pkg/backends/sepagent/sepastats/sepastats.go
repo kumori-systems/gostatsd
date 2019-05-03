@@ -29,8 +29,9 @@ type itemEx struct {
 // SEPAStats is used to convert gostatsd metrics into more convenient
 // structures for SepAgent, and get them as serialized JSON objects.
 type SEPAStats struct {
-	sepRegExp *regexp.Regexp
-	seps      map[string][]Item
+	sepRegExp     *regexp.Regexp
+	clusterRegExp *regexp.Regexp
+	seps          map[string][]Item
 }
 
 // -----------------------------------------------------------------------------
@@ -38,7 +39,7 @@ type SEPAStats struct {
 // -----------------------------------------------------------------------------
 
 // New creates a new SEPAStats
-func New(sepRegExpStr string) (s *SEPAStats, err error) {
+func New(sepRegExpStr string, clusterRegExpStr string) (s *SEPAStats, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("SEPAStats.New: %s", r.(error).Error())
@@ -46,7 +47,8 @@ func New(sepRegExpStr string) (s *SEPAStats, err error) {
 	}()
 	sepRegExp := regexp.MustCompile("_" + sepRegExpStr + "$")
 	seps := make(map[string][]Item)
-	s = &SEPAStats{sepRegExp, seps}
+	clusterRegExp := regexp.MustCompile(clusterRegExpStr + "$")
+	s = &SEPAStats{sepRegExp, clusterRegExp, seps}
 	return
 }
 
@@ -76,6 +78,10 @@ func (s *SEPAStats) AddItem(metricType string, key string, aggregation string, v
 	keyParts := strings.Split(key, ".")
 	cluster := keyParts[len(keyParts)-2]
 	statistic := keyParts[len(keyParts)-1]
+	if s.clusterRegExp.MatchString(cluster) == false {
+		err = fmt.Errorf("sepastats: Cluster regular expression not found in key %s", key)
+		return
+	}
 	if s.sepRegExp.MatchString(cluster) == false {
 		err = fmt.Errorf("sepastats: Sep regular expression not found in key %s", key)
 		return
@@ -102,7 +108,9 @@ func (s *SEPAStats) IsSep(key string) (rc bool) {
 	}()
 	keyParts := strings.Split(key, ".")
 	cluster := keyParts[len(keyParts)-2]
-	rc = (s.sepRegExp.MatchString(cluster) == true)
+	clusterCheck := (s.clusterRegExp.MatchString(cluster) == true)
+	sepCheck := (s.sepRegExp.MatchString(cluster) == true)
+	rc = (clusterCheck && sepCheck)
 	return
 }
 

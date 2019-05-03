@@ -8,7 +8,7 @@ a SepAgent.
 
 Para generar el nuevo ejecutable:
 - Preparar el entorno (1 única vez) con "make setup"
-- Generar el ejecutable con "make build"
+- Generar el ejecutable con "make build-all"
 
 
 Prometheus
@@ -80,5 +80,5 @@ Hasta que hayan aplicado la solución, podemos evitarlo así:
 
 - Lanzamos el "make setup".
 
-- Lanzamos el "make build".
+- Lanzamos el "make build-all".
 
