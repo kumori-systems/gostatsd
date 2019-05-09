@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 // Item contains stats info in a convenient format for SepAgent
@@ -45,9 +44,9 @@ func New(sepRegExpStr string, clusterRegExpStr string) (s *SEPAStats, err error)
 			err = fmt.Errorf("SEPAStats.New: %s", r.(error).Error())
 		}
 	}()
-	sepRegExp := regexp.MustCompile("_" + sepRegExpStr + "$")
+	sepRegExp := regexp.MustCompile(sepRegExpStr)
 	seps := make(map[string][]Item)
-	clusterRegExp := regexp.MustCompile(clusterRegExpStr + "$")
+	clusterRegExp := regexp.MustCompile(clusterRegExpStr)
 	s = &SEPAStats{sepRegExp, clusterRegExp, seps}
 	return
 }
@@ -56,13 +55,13 @@ func New(sepRegExpStr string, clusterRegExpStr string) (s *SEPAStats, err error)
 // and adds it to the seps map.
 // For example, something like this in gostatsd metrics ...
 //   metricType = "counter"
-//   key = "envoy.cluster.external_cluster_sep1.upstream_rq_time"
+//   key = "envoy.cluster.external_cluster_eslap.cloud_sep_1.upstream_rq_time"
 //   aggregation = "count"
 //   value = 100
 // ... is converted to Item
 //   {
 //   	 instanceID = "sep1",
-//   	 cluster = "external_cluster_sep1",
+//   	 cluster = "external_cluster_eslap.cloud_sep_1",
 //   	 metricType = "counter",  (counter, gauge or timers)
 //   	 aggregationType = "count",   (count, per_second, ....)
 //     statistic = "upstram_rq_time"
@@ -75,20 +74,17 @@ func (s *SEPAStats) AddItem(metricType string, key string, aggregation string, v
 			err = fmt.Errorf("sepastats: %s", r.(error).Error())
 		}
 	}()
-	keyParts := strings.Split(key, ".")
-	cluster := keyParts[len(keyParts)-2]
-	statistic := keyParts[len(keyParts)-1]
-	if s.clusterRegExp.MatchString(cluster) == false {
-		err = fmt.Errorf("sepastats: Cluster regular expression not found in key %s", key)
+	cluster := s.clusterRegExp.FindString(key)
+	sepInstance := s.sepRegExp.FindString(cluster)
+	if cluster == "" || sepInstance == "" {
+		err = fmt.Errorf("sepastats: sep or cluster not found in key %s", key)
 		return
 	}
-	if s.sepRegExp.MatchString(cluster) == false {
-		err = fmt.Errorf("sepastats: Sep regular expression not found in key %s", key)
-		return
-	}
+	clusterIndex := s.clusterRegExp.FindStringIndex(key)
+	statistic := key[clusterIndex[1]+1:]
 	item := Item{}
 	item.Statistics = statistic
-	item.InstanceID = s.sepRegExp.FindString(cluster)[1:]
+	item.InstanceID = sepInstance
 	item.Cluster = cluster
 	item.MetricType = metricType
 	item.AggregationType = aggregation
@@ -99,17 +95,15 @@ func (s *SEPAStats) AddItem(metricType string, key string, aggregation string, v
 }
 
 // IsSep checks if the provided key corresponds to a sep metric
-// Example of key: "envoy.cluster.external_cluster_sep1.upstream_rq_time"
+// Example of key: "envoy.cluster.external_cluster_eslap.cloud_sep_1.upstream_rq_time"
 func (s *SEPAStats) IsSep(key string) (rc bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			rc = false
 		}
 	}()
-	keyParts := strings.Split(key, ".")
-	cluster := keyParts[len(keyParts)-2]
-	clusterCheck := (s.clusterRegExp.MatchString(cluster) == true)
-	sepCheck := (s.sepRegExp.MatchString(cluster) == true)
+	clusterCheck := (s.clusterRegExp.MatchString(key) == true)
+	sepCheck := (s.sepRegExp.MatchString(key) == true)
 	rc = (clusterCheck && sepCheck)
 	return
 }
