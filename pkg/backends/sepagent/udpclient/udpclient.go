@@ -10,7 +10,7 @@ import (
 
 // UDPClient is a wrapper to send data via udp to an endpoint
 type UDPClient struct {
-	endpoint string
+	endpoint *net.UDPAddr
 }
 
 // New creates a new UDPClient
@@ -20,8 +20,10 @@ func New(host string, port int) (client *UDPClient, err error) {
 			err = fmt.Errorf("UDPClient.New: %s", r.(error).Error())
 		}
 	}()
-	endpoint := host + ":" + strconv.FormatInt(int64(port), 10)
-	client = &UDPClient{endpoint}
+	endpoint, err := net.ResolveUDPAddr("udp", host+":"+strconv.FormatInt(int64(port), 10))
+	if err == nil {
+		client = &UDPClient{endpoint}
+	}
 	return
 }
 
@@ -37,17 +39,18 @@ func (client *UDPClient) Send(data []byte) (err error) {
 			conn.Close()
 		}
 	}()
-	if client.endpoint == "" {
+	if client.endpoint == nil {
 		err = errors.New("UDPClient.Send: endpoint undefined")
 		return
 	}
-	conn, err = net.Dial("udp", client.endpoint)
+	conn, err = net.DialUDP("udp", nil, client.endpoint)
 	if err != nil {
 		err = fmt.Errorf("UDPClient.Send: %s", err.Error())
 		return
 	}
 	var sentBytes int
 	sentBytes, err = conn.Write(data)
+	fmt.Println("JJJ --- ", client.endpoint, sentBytes, len(data))
 	if err != nil {
 		err = fmt.Errorf("UDPClient.Send: %s", err.Error())
 		return
