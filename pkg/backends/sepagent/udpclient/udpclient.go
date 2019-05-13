@@ -50,7 +50,6 @@ func (client *UDPClient) Send(data []byte) (err error) {
 	}
 	var sentBytes int
 	sentBytes, err = conn.Write(data)
-	fmt.Println("JJJ --- ", client.endpoint, sentBytes, len(data))
 	if err != nil {
 		err = fmt.Errorf("UDPClient.Send: %s", err.Error())
 		return
